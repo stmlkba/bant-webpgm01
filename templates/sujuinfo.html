@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>고객 또는 거래처명으로 담당자 검색</title>
+    <style>
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+        th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        tr:hover {
+            background-color: #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+    <h1>고객 또는 거래처명으로 담당자 검색</h1>
+
+    <form method="post" action="/suju_info">
+        <label for="customer_name">고객/거래처명:</label>
+        <input type="text" id="customer_name" name="customer_name">
+        <button type="submit">검색</button>
+    </form>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <ul>
+            {% for message in messages %}
+                <li>{{ message }}</li>
+            {% endfor %}
+            </ul>
+        {% endif %}
+    {% endwith %}
+
+    {% if results %}
+    <!-- <h1>검색 결과</h1>  -->
+    <p>검색어: {{ customer_name }}</p>
+
+    <table>
+        <tr>
+            <th>번호</th>
+            <th>수주 번호</th>
+            <th>담당자 이름</th>
+            <th>연락처</th>
+            <th>판매채널</th>
+            <th>고객사</th>
+            <th>수주 이름</th>
+        </tr>
+        {% for row in results %}
+        <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ row[0] }}</td>
+            <td>{{ row[2] }}</td>
+            <td>{{ row[3] }}</td>
+            <td>{{ row[4] }}</td>
+            <td>{{ row[5] }}</td>
+            <td>{{ row[6] }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+</body>
+</html>

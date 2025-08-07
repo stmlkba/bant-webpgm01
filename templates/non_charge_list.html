@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>청구 내역 조회</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+        .search-form {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+            font-weight: bold;
+            text-align: center;
+            cursor: pointer;
+        }
+        td {
+            text-align: left;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        tr:hover {
+            background-color: #e6f7ff;
+        }
+        .numeric {
+            text-align: right;
+        }
+        .no-data {
+            color: #7f8c8d;
+            font-style: italic;
+            padding: 20px;
+            text-align: center;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script>
+        function exportTableToExcel() {
+            const table = document.getElementById('청구내역테이블');
+            const wb = XLSX.utils.table_to_book(table, { raw: true });
+            XLSX.writeFile(wb, '청구내역_조회결과.xlsx');
+        }
+
+        function sortTable(colIndex) {
+            const table = document.getElementById("청구내역테이블");
+            const tbody = table.tBodies[0];
+            const rows = Array.from(tbody.rows);
+            let asc = table.getAttribute("data-sort-dir") !== "asc";
+            table.setAttribute("data-sort-dir", asc ? "asc" : "desc");
+
+            const numericColumns = [0, 2, 5, 6, 7, 9, 10, 11, 12, 13];
+
+            rows.sort((a, b) => {
+                let x = a.cells[colIndex].textContent.trim();
+                let y = b.cells[colIndex].textContent.trim();
+
+                if (numericColumns.includes(colIndex)) {
+                    x = parseFloat(x.replace(/[^0-9.-]/g, '')) || 0;
+                    y = parseFloat(y.replace(/[^0-9.-]/g, '')) || 0;
+                } else {
+                    x = x.toLowerCase();
+                    y = y.toLowerCase();
+                }
+
+                if (x < y) return asc ? -1 : 1;
+                if (x > y) return asc ? 1 : -1;
+                return 0;
+            });
+
+            rows.forEach(row => tbody.appendChild(row));
+        }
+
+        function validateDateRange() {
+            const from = document.getElementById("from_date").value;
+            const to = document.getElementById("to_date").value;
+
+            if (!from) {
+                alert("청구예정일 From 값을 입력해야 합니다.");
+                return false;
+            }
+
+            if (to) {
+                const fromYear = new Date(from).getFullYear();
+                const toYear = new Date(to).getFullYear();
+                if (fromYear !== toYear) {
+                    alert("청구예정일 From/To는 동일한 연도여야 합니다.");
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    </script>
+</head>
+<body>
+    <h1>청구 내역 조회</h1>
+
+    <div class="search-form">
+        <form method="post" action="/non_charge_list" onsubmit="return validateDateRange();">
+            <label for="from_date">청구예정일 (From):</label>
+            <input type="date" id="from_date" name="from_date" value="{{ search_conditions.from_date or '' }}">
+            <label for="to_date">To:</label>
+            <input type="date" id="to_date" name="to_date" value="{{ search_conditions.to_date or '' }}">
+            <label for="suju_type">수주구분:</label>
+            <select id="suju_type" name="suju_type">
+                <option value="all" {% if search_conditions.suju_type == 'all' %}selected{% endif %}>전체</option>
+                <option value="S" {% if search_conditions.suju_type == 'S' %}selected{% endif %}>일반</option>
+                <option value="M" {% if search_conditions.suju_type == 'M' %}selected{% endif %}>MA</option>
+            </select>
+            <label>
+                <input type="checkbox" name="unbilled_only" value="1" {% if search_conditions.unbilled_only %}checked{% endif %}>
+                미청구건만 보기
+            </label>
+            <button type="submit" style="padding: 5px 15px; background-color: #3498db; color: white; border: none; border-radius: 3px;">조회</button>
+        </form>
+    </div>
+
+    {% if request.method == 'POST' %}
+        {% if results %}
+        <h2>조회 결과 ({{ results|length }}건)
+            <button onclick="exportTableToExcel()" style="float:right; padding:5px 10px; background:#28a745; color:white; border:none; border-radius:3px;">엑셀다운로드</button>
+        </h2>
+        <table id="청구내역테이블">
+            <thead>
+                <tr>
+                    <th onclick="sortTable(0)">No</th>
+                    <th onclick="sortTable(1)">수주번호</th>
+                    <th onclick="sortTable(2)">차수</th>
+                    <th onclick="sortTable(3)">수주건명</th>
+                    <th onclick="sortTable(4)">판매처</th>
+                    <th onclick="sortTable(5)">청구예정일</th>
+                    <th onclick="sortTable(6)">공급가(계획)</th>
+                    <th onclick="sortTable(7)">부가세(계획)</th>
+                    <th onclick="sortTable(8)">합계(계획)</th>
+                    <th onclick="sortTable(9)">청구일(실제)</th>
+                    <th onclick="sortTable(10)">공급가(실제)</th>
+                    <th onclick="sortTable(11)">부가세(실제)</th>
+                    <th onclick="sortTable(12)">합계(실제)</th>
+                    <th onclick="sortTable(13)">미청구금액</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in results %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ row['수주번호'] }}</td>
+                    <td>{{ row['차수'] }}</td>
+                    <td>{{ row['수주건명'] }}</td>
+                    <td>{{ row['판매처'] }}</td>
+                    <td>{{ row['청구예정일'] }}</td>
+                    <td class="numeric">{{ "{:,.0f}".format(row['계획공급가'] or 0) }}</td>
+                    <td class="numeric">{{ "{:,.0f}".format(row['계획부가세'] or 0) }}</td>
+                    <td class="numeric">{{ "{:,.0f}".format(row['계획합계'] or 0) }}</td>
+                    <td>{{ row['실제청구일'] or '-' }}</td>
+                    <td class="numeric">{{ "{:,.0f}".format(row['실제공급가'] or 0) }}</td>
+                    <td class="numeric">{{ "{:,.0f}".format(row['실제부가세'] or 0) }}</td>
+                    <td class="numeric">{{ "{:,.0f}".format(row['실제합계'] or 0) }}</td>
+                    <td class="numeric">{{ "{:,.0f}".format(row['미청구금액'] or 0) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="no-data">조회된 데이터가 없습니다.</p>
+        {% endif %}
+    {% endif %}
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>엑셀 데이터 보기</title>
+    <style>
+        .table-container {
+            overflow: auto;
+            margin-top: 20px;
+            border: 1px solid #ccc;
+            max-height: 500px;
+        }
+        table {
+            border-collapse: collapse;
+            width: max-content;
+            min-width: 100%;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+            white-space: nowrap;
+        }
+        th {
+            background-color: #f2f2f2;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            cursor: pointer; /* ✅ 정렬 가능 표시 */
+        }
+        form.inline-form {
+            display: inline-block;
+            margin-right: 10px;
+        }
+    </style>
+
+</head>
+<body>
+   <h2>📄 롯데카드 - 엑셀 파일 불러오기</h2>
+    <form method="POST" enctype="multipart/form-data" class="inline-form">
+        <input type="file" name="excel_file" accept=".xlsx, .xls" required>
+        <button type="submit">불러오기</button>
+    </form>
+
+    {% if data %}
+    <form method="POST" action="/classify" class="inline-form">
+        <button type="submit">사용구분 자동생성</button>
+    </form>
+   
+        
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    {% for col in columns %}
+                    <th>{{ col }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in data %}
+                <tr>
+                    {% for item in row %}
+                    <td>{{ item }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <!-- ✅ 버튼 위치를 상단 그리드 하단으로 이동 -->
+    <div style="margin-top: 15px;">
+        <form method="POST" action="/lotte_reorder" style="display: inline;">
+            <button type="submit">항목 및 순서조정</button>
+        </form>
+
+        <form method="POST" action="/lotte_download" style="display: inline;">
+            <button type="submit">조정 후 엑셀저장(일괄)</button>
+        </form>
+        <!-- 새로 추가된 버튼 -->
+        <form method="POST" action="/lotte_download_by_card" style="display: inline;">
+            <button type="submit">조정 후 엑셀저장(카드별)</button>
+        </form>
+    </div>
+    
+    {% endif %}
+
+    {% if l_reordered_data %}
+    <h3>📋 항목 및 순서조정 결과 - 동일한 카드번호로 업로드</h3>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    {% for col in l_reordered_columns %}
+                    <th>{{ col }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in l_reordered_data %}
+                <tr>
+                    {% for item in row %}
+                    <td>{{ item }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const tables = document.querySelectorAll("table");
+
+            tables.forEach(table => {
+                const headers = table.querySelectorAll("th");
+                headers.forEach((th, index) => {
+                    th.addEventListener("click", () => {
+                        const tbody = table.querySelector("tbody");
+                        const rows = Array.from(tbody.querySelectorAll("tr"));
+
+                        const isAsc = th.classList.contains("asc");
+                        rows.sort((a, b) => {
+                            const aText = a.children[index].innerText;
+                            const bText = b.children[index].innerText;
+
+                            const aVal = isNaN(aText) ? aText : parseFloat(aText.replace(/,/g, ""));
+                            const bVal = isNaN(bText) ? bText : parseFloat(bText.replace(/,/g, ""));
+
+                            return isAsc
+                                ? (aVal > bVal ? -1 : aVal < bVal ? 1 : 0)
+                                : (aVal > bVal ? 1 : aVal < bVal ? -1 : 0);
+                        });
+
+                        // 정렬 적용
+                        rows.forEach(row => tbody.appendChild(row));
+
+                        // 정렬 상태 toggle
+                        headers.forEach(h => h.classList.remove("asc", "desc"));
+                        th.classList.toggle("asc", !isAsc);
+                        th.classList.toggle("desc", isAsc);
+                    });
+                });
+            });
+        });
+    </script>
+
+
+
+</body>
+</html>
+
+

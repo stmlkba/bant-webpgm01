@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>수금 내역 조회 (엑셀 스타일)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+        .search-form {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+            font-weight: bold;
+            text-align: center;
+            cursor: pointer;
+        }
+        td {
+            text-align: left;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        tr:hover {
+            background-color: #e6f7ff;
+        }
+        .total-row {
+            font-weight: bold;
+            background-color: #d4edff !important;
+        }
+        .no-data {
+            color: #7f8c8d;
+            font-style: italic;
+            padding: 20px;
+            text-align: center;
+        }
+        .numeric {
+            text-align: right;
+        }
+    </style>
+    <!-- SheetJS 라이브러리 추가 (HEAD 부분에 위치) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script>
+        function sortTable(n) {
+            var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+            table = document.querySelector("table");
+            switching = true;
+            dir = "asc"; 
+            
+            var numericColumns = [3,4,5,10];
+            
+            while (switching) {
+                switching = false;
+                rows = table.rows;
+                
+                for (i = 1; i < (rows.length - 2); i++) {
+                    shouldSwitch = false;
+                    x = rows[i].getElementsByTagName("td")[n];
+                    y = rows[i + 1].getElementsByTagName("td")[n];
+                    
+                    if (numericColumns.includes(n)) {
+                        var xVal = parseFloat(x.textContent.replace(/[^0-9.-]/g, '')) || 0;
+                        var yVal = parseFloat(y.textContent.replace(/[^0-9.-]/g, '')) || 0;
+                        
+                        if (dir == "asc") {
+                            shouldSwitch = xVal > yVal;
+                        } else if (dir == "desc") {
+                            shouldSwitch = xVal < yVal;
+                        }
+                    } 
+                    else {
+                        var xText = x.textContent.toLowerCase();
+                        var yText = y.textContent.toLowerCase();
+                        if (dir == "asc") {
+                            shouldSwitch = xText > yText;
+                        } else if (dir == "desc") {
+                            shouldSwitch = xText < yText;
+                        }
+                    }
+                    
+                    if (shouldSwitch) break;
+                }
+                
+                if (shouldSwitch) {
+                    rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+                    switching = true;
+                    switchcount++;      
+                } else {
+                    if (switchcount == 0 && dir == "asc") {
+                        dir = "desc";
+                        switching = true;
+                    }
+                }
+            }
+        }
+
+        // 엑셀 다운로드 함수 (수정 버전)
+        function exportTableToExcel() {
+            const table = document.getElementById('수금내역테이블');
+            const workbook = XLSX.utils.table_to_book(table, {
+                raw: true,
+                dateNF: 'yyyy-mm-dd'
+            });
+            XLSX.writeFile(workbook, '수금내역_조회결과.xlsx');
+        }
+    </script>
+
+    
+    <script>
+        function validateDateRange() {
+            const from = document.getElementById("bill_date_from").value;
+            const to = document.getElementById("bill_date_to").value;
+            const custName = document.getElementById("cust_name").value.trim();
+
+            // 수금처명 입력 시: 날짜 체크 패스
+            if (custName !== "") {
+                return true;
+            }
+
+            // 수금처명 미입력 시: 날짜 필수 + 3개월 제한
+            if (!from || !to) {
+                alert("수금일자 조회 기간은 최대 3개월까지만 가능합니다.");
+                return false;
+            }
+
+            const fromDate = new Date(from);
+            const toDate = new Date(to);
+            const diffMonths = (toDate.getFullYear() - fromDate.getFullYear()) * 12 + (toDate.getMonth() - fromDate.getMonth());
+
+            if (diffMonths > 3 || (diffMonths === 3 && toDate.getDate() > fromDate.getDate())) {
+                alert("수금일자 조회 기간은 최대 3개월까지만 가능합니다.");
+                return false;
+            }
+
+            return true;
+        }
+    </script>
+
+
+
+</head>
+<body>
+    <h1>수금 내역 조회</h1>
+
+    <div class="search-form">
+        <form method="post" action="/collect_list" onsubmit="return validateDateRange();">
+            <label for="bill_date_from">수금일자 (From):</label>
+            <input type="date" id="bill_date_from" name="bill_date_from" 
+                   value="{{ search_conditions.bill_date_from if search_conditions.bill_date_from }}">
+            
+            <label for="bill_date_to">To:</label>
+            <input type="date" id="bill_date_to" name="bill_date_to"
+                   value="{{ search_conditions.bill_date_to if search_conditions.bill_date_to else '' }}">
+
+            <label for="cust_name">수금처명:</label>
+            <input type="text" id="cust_name" name="cust_name"
+                   value="{{ search_conditions.cust_name if search_conditions.cust_name }}">
+
+            <button type="submit" style="padding: 5px 15px; background-color: #3498db; color: white; border: none; border-radius: 3px; cursor: pointer;">조회</button>
+        </form>
+    </div>
+
+    {% if results %}
+    <h2>조회 결과 ({{ results|length }}건)
+        <button onclick="exportTableToExcel()" 
+        style="float:right; padding:5px 10px; background:#28a745; color:white; border:none; border-radius:3px; cursor:pointer;"> 엑셀다운로드 </button>
+    </h2>
+
+    <table id="수금내역테이블">
+        <thead>
+            <tr>
+                <th onclick="sortTable(0)">No.</th>
+                <th onclick="sortTable(1)">수금처명</th>
+                <th onclick="sortTable(2)">수금일자</th>
+                <th onclick="sortTable(3)">공급가</th>
+                <th onclick="sortTable(4)">부가세</th>
+                <th onclick="sortTable(5)">합계금액</th>
+                <th onclick="sortTable(6)">수주번호</th>
+                <th onclick="sortTable(7)">변경차수</th>
+                <th onclick="sortTable(8)">수주건명</th>
+                <th onclick="sortTable(9)">계약일자</th>
+                <th onclick="sortTable(10)">총계약금액</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in results %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ row['수금처명'] or '-' }}</td>
+                <td>{{ row['수금일자'][0:4] }}-{{ row['수금일자'][4:6] }}-{{ row['수금일자'][6:8] }}</td>
+                <td class="numeric">{{ "{:,.0f}".format(row['공급가']|default(0)) }}</td>
+                <td class="numeric">{{ "{:,.0f}".format(row['부가세']|default(0)) }}</td>
+                <td class="numeric">{{ "{:,.0f}".format(row['합계금액']|default(0)) }}</td>
+                <td>{{ row['수주번호'] or '-' }}</td>
+                <td>{{ row['변경차수'] }}</td>
+                <td>{{ row['수주건명'] }}</td>
+                <td>
+                    {% if row['계약일자'] != '-' %}
+                        {{ row['계약일자'][0:4] }}-{{ row['계약일자'][4:6] }}-{{ row['계약일자'][6:8] }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td class="numeric">{{ "{:,.0f}".format(row['총계약금액']|default(0)) }}</td>
+            </tr>
+            {% endfor %}
+            
+            <tr class="total-row">
+                <td colspan="3">합계</td>
+                <td class="numeric">{{ "{:,.0f}".format(totals['공급가']) }}</td>
+                <td class="numeric">{{ "{:,.0f}".format(totals['부가세']) }}</td>
+                <td class="numeric">{{ "{:,.0f}".format(totals['합계금액']) }}</td>
+                <td colspan="4"></td>
+                <td class="numeric">{{ "{:,.0f}".format(totals['총계약금액']) }}</td>
+            </tr>
+        </tbody>
+    </table>
+    {% else %}
+    <p class="no-data">조회된 데이터가 없습니다.</p>
+    {% endif %}
+</body>
+</html>

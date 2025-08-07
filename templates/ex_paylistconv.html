@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>급여대장 미리보기</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 2000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        .scroll-table-container {
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+        table {
+            border-collapse: collapse;
+            width: max-content;
+            min-width: 100%;
+            table-layout: auto;
+        }
+        th, td {
+            padding: 8px;
+            border: 1px solid #ccc;
+            font-size: 13px;
+            text-align: center;
+            white-space: nowrap;
+        }
+        th {
+            background-color: #eee;
+        }
+        .error {
+            color: red;
+            margin-top: 10px;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>급여대장 엑셀파일 변환하기</h2>
+        <form id="converterForm">
+
+            <label for="comp_cd">회사 선택:</label>
+                <select id="comp_cd">
+                    <option value="BANT" selected>BANT</option>
+                    <option value="BASENET">BASENET</option>
+                </select>
+
+            <label for="path_a">더존 급여대장 엑셀파일 선택</label>
+            <input type="file" id="path_a" accept=".xlsx, .xls">
+            <div style="overflow: hidden;">
+                <div style="float: left;">
+                    <button type="button" onclick="loadGrid()">불러오기</button>
+                    <button type="button" onclick="downloadExcel()" disabled>엑셀로 저장하기</button>
+                </div>
+            
+                <div style="float: right;">
+                    <button type="button" onclick="adjustGrid()">항목순서조정</button>
+                    <button type="button" onclick="downloadAdjustedExcel()">조정된 엑셀 저장</button>
+                </div>
+            </div>
+
+        </form>
+        <div id="error" class="error"></div>
+        <div class="scroll-table-container">
+            <div id="gridContainer"></div>
+            <div id="adjustedGridContainer" style="margin-top: 40px;"></div>
+
+        </div>
+    </div>
+
+    <script>
+        function loadGrid() {
+            const fileInput = document.getElementById('path_a');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert("더존 급여대장 파일을 선택해주세요.");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const gridContainer = document.getElementById('gridContainer');
+            const errorDiv = document.getElementById('error');
+            gridContainer.innerHTML = "처리 중...";
+            errorDiv.innerText = "";
+
+            fetch('/ex_paylistconv', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    errorDiv.innerText = data.message || "데이터를 불러올 수 없습니다.";
+                    gridContainer.innerHTML = "";
+                    return;
+                }
+
+                const table = document.createElement('table');
+                const headerRow = document.createElement('tr');
+                const fields = Object.keys(data.data[0] || {});
+                fields.forEach(field => {
+                    const th = document.createElement('th');
+                    th.textContent = field;
+                    headerRow.appendChild(th);
+                });
+                table.appendChild(headerRow);
+
+                data.data.forEach(row => {
+                    const tr = document.createElement('tr');
+                    fields.forEach(field => {
+                        const td = document.createElement('td');
+                        td.textContent = row[field];
+                        tr.appendChild(td);
+                    });
+                    table.appendChild(tr);
+                });
+
+                gridContainer.innerHTML = '';
+                gridContainer.appendChild(table);
+            })
+            .catch(error => {
+                errorDiv.innerText = "서버 오류 발생: " + error;
+                gridContainer.innerHTML = "";
+            });
+        }
+
+
+        function downloadExcel() {
+            const table = document.querySelector("#gridContainer table");
+            if (!table) {
+                alert("다운로드할 데이터가 없습니다.");
+                return;
+            }
+
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.table_to_sheet(table);
+            XLSX.utils.book_append_sheet(wb, ws, "급여대장");
+
+            XLSX.writeFile(wb, "급여대장_다운로드.xlsx");
+        }
+        
+        // 최초 조회된 그리드에서// 최초 조회된 그리드에서 특정 항목을 골라서 새로운 그리드로 해당 항목만 조회 
+        function adjustGrid() {
+        
+            const table = document.querySelector("#gridContainer table");
+            if (!table) {
+                alert("먼저 불러오기를 해주세요.");
+                return;
+            }
+
+            fetch('/get_adjust_columns?comp_cd=' + encodeURIComponent(document.getElementById('comp_cd').value))
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    alert("항목 리스트를 가져오는데 실패했습니다.");
+                    return;
+                }
+
+                const targetColumns = data.columns;
+                const originalHeaders = Array.from(table.querySelectorAll('th')).map(th => th.textContent.trim());
+
+                const newTable = document.createElement('table');
+                const headerRow = document.createElement('tr');
+
+                targetColumns.forEach(target => {
+                    const th = document.createElement('th');
+                    th.textContent = target;
+                    headerRow.appendChild(th);
+                });
+                newTable.appendChild(headerRow);
+
+                const rows = table.querySelectorAll('tbody tr, tr:not(:first-child)');
+                const bodyData = [];
+
+                rows.forEach(row => {
+                    const tr = document.createElement('tr');
+                    const cells = row.querySelectorAll('td');
+                    const rowData = [];
+
+                    targetColumns.forEach(target => {
+                        const td = document.createElement('td');
+                        const idx = originalHeaders.findIndex(h => h.replace(/\s+/g, '') === target.replace(/\s+/g, ''));
+
+                        if (idx !== -1) {
+                            td.textContent = cells[idx]?.textContent || "";
+                            rowData.push(td.textContent);
+                        } else {
+                            td.textContent = "";
+                            rowData.push("");
+                        }
+                        tr.appendChild(td);
+                    });
+
+                    bodyData.push(rowData);
+                    newTable.appendChild(tr);
+                });
+
+        // ▶▶▶ 합계 행 추가 시작
+        const sumRow = document.createElement('tr');
+
+        bodyData[0].forEach((_, colIdx) => {
+            const td = document.createElement('td');
+            if (colIdx === 0) {
+                td.textContent = "합계"; // 첫번째 컬럼은 "합계" 표시
+            } else if (colIdx >= 2) {
+                // 3번째 컬럼부터 합계 계산
+                const sum = bodyData.reduce((acc, row) => {
+                    const val = parseFloat(row[colIdx].toString().replace(/,/g, '')) || 0;
+                    return acc + val;
+                }, 0);
+                td.textContent = sum.toLocaleString(); // 숫자 포맷팅
+            } else {
+                td.textContent = ""; // 2번째 컬럼은 합계 없음
+            }
+            sumRow.appendChild(td);
+        });
+        newTable.appendChild(sumRow);
+        // ◀◀◀ 합계 행 추가 끝
+
+        const adjustedGridContainer = document.getElementById('adjustedGridContainer');
+        adjustedGridContainer.innerHTML = '';
+        adjustedGridContainer.appendChild(newTable);
+    })
+    .catch(error => {
+        alert("서버 오류: " + error);
+    });
+}
+
+
+        // 조정된 항목조회 데이터를  엑셀로 다운, 첫번째 컬럼은 문자열로 강제 지정
+        function downloadAdjustedExcel() {
+            const table = document.querySelector("#adjustedGridContainer table");
+            if (!table) {
+                alert("다운로드할 조정된 데이터가 없습니다.");
+                return;
+            }
+
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.table_to_sheet(table, { raw: false });
+
+            // 전체 행 수 계산
+            const totalRows = table.querySelectorAll('tr').length;
+
+            for (const cell in ws) {
+                if (cell[0] === '!') continue; // 메타데이터 제외
+
+                const colLetter = cell.replace(/[0-9]/g, ''); // A, B, C 등 열 문자 추출
+                const rowNumber = parseInt(cell.replace(/[A-Z]/g, ''), 10); // 숫자부분(행번호) 추출
+
+                if (colLetter === 'A') {
+                    // 첫번째(헤더 1행)과 마지막(합계) 행은 제외
+                    if (rowNumber > 1 && rowNumber < totalRows) {
+                        const originalValue = ws[cell].v;
+
+                        // 값이 숫자면 문자열로 변환
+                        if (typeof originalValue === 'number') {
+                            ws[cell].v = originalValue.toString().padStart(10, '0');
+                        } else if (typeof originalValue === 'string') {
+                            ws[cell].v = originalValue.padStart(10, '0');
+                        }
+
+                        ws[cell].t = 's'; // 타입을 문자열로 고정
+                    }
+                }
+            }
+
+            XLSX.utils.book_append_sheet(wb, ws, "조정된급여대장");
+            XLSX.writeFile(wb, "조정된_급여대장_다운로드.xlsx");
+        }
+
+
+
+    </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</body>
+</html>
+
