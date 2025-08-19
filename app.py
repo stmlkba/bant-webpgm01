@@ -61,7 +61,7 @@ def login():
         # 사용자 입력 비밀번호와 DB에 저장된 암호화된 비밀번호를 비교(우선 ID만 확인)
         if user:
     
-            if user_id == 'kkh0123456' or 'ekgus3907':
+            if user_id == 'kkh0123456' or 'ekgus3907' or 'jhlim':
                 ###flash('로그인 성공!', 'success')
                 ###return redirect(url_for('main_page'))  # 로그인 후 이동할 페이지 
                 return render_template('main.html')           
@@ -1034,6 +1034,157 @@ def non_charge_list():
 
 
 ############미청구내역 조회 end ################################################
+
+############매입내역 조회 START ################################################
+
+@app.route('/buy_list', methods=['GET', 'POST'])
+def buy_list():
+    today = datetime.now().strftime('%Y-%m-%d')
+    results = []
+    totals = {'공급가': 0, '부가세': 0, '합계금액': 0}
+    dept_list = []
+
+    # DB 연결
+    connection = get_db_connection()
+    if not connection:
+        return render_template('buy_list.html',
+                               error="DB 연결 실패",
+                               search_conditions={})
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+
+        # 부서 드롭다운: comp_cd='BANT' AND dstb_type='A01'
+        sql_dept = """
+            SELECT dept_cd, dept_nm
+              FROM bs_dept
+             WHERE comp_cd = 'BANT'
+               AND dstb_type = 'A01'
+             ORDER BY dept_cd
+        """
+        cursor.execute(sql_dept)
+        dept_list = cursor.fetchall()
+
+        # 화면에 '전체' 옵션 추가
+        dept_list = [{'dept_cd': '전체', 'dept_nm': '전체'}] + dept_list
+
+        if request.method == 'POST':
+            search_conditions = {
+                'date_from': request.form.get('date_from', ''),
+                'date_to': request.form.get('date_to', today),
+                'suju_type': request.form.get('suju_type', '전체'),
+                'dept_cd': request.form.get('dept_cd', '전체')
+            }
+
+            # 날짜 변환 (YYYY-MM-DD → YYYYMMDD)  ※ sa_buy.tax_date가 CHAR(8)이므로 변환 필요
+            date_from_ymd = search_conditions['date_from'].replace("-", "") if search_conditions['date_from'] else "19000101"
+            date_to_ymd = search_conditions['date_to'].replace("-", "") if search_conditions['date_to'] else today.replace("-", "")
+
+            # 매입내역 조회 (요청 조건 반영)
+            # - 수주번호: suju_no + '-' + chg_chasu(2자리)
+            # - 수주담당: sa_(s/ms)sujuinfo → cm_user.empno → user_nm
+            # - 수주부서: 위 empno → cm_user.dept_cd → bs_dept.dept_nm
+            # - 수주구분: '일반'→ suju_no 첫글자 'S', 'MA'→ 'M', '전체'→ 제한없음
+            # - 부서필터: 선택부서 or ('BANT','A01' 전체)
+            sql = """
+                SELECT 
+                       CONCAT(b.suju_no, '-', LPAD(b.chg_chasu,2,'0')) AS 수주번호,
+                       u.user_nm AS 수주담당,
+                       d.dept_nm AS 수주부서,
+                       b.po_no AS 발주번호,
+                       b.po_name AS 발주명,
+                       b.po_cd AS 구매처코드,
+                       c.cust_nm AS 구매처명,
+                       b.tax_date AS 매입일자,        -- CHAR(8), 템플릿에서 yyyy-mm-dd로 포맷
+                       b.suprice_amt AS 공급가,
+                       b.vat AS 부가세,
+                       b.tot_amt AS 합계금액
+                  FROM sa_buy b
+                  JOIN bs_cust c
+                    ON b.comp_cd = c.comp_cd
+                   AND b.site_cd = c.site_cd
+                   AND b.po_cd  = c.cust_cd
+                  JOIN (
+                        SELECT s.comp_cd, s.site_cd, s.suju_no, s.chg_chasu, s.empno
+                          FROM sa_ssujuinfo s
+                        UNION ALL
+                        SELECT m.comp_cd, m.site_cd, m.suju_no, m.chg_chasu, m.empno
+                          FROM sa_msujuinfo m
+                  ) si
+                    ON b.comp_cd   = si.comp_cd
+                   AND b.site_cd   = si.site_cd
+                   AND b.suju_no   = si.suju_no
+                   AND b.chg_chasu = si.chg_chasu
+                  JOIN cm_user u
+                    ON u.comp_cd = b.comp_cd
+                   AND u.empno   = si.empno
+                  JOIN bs_dept d
+                    ON d.comp_cd = b.comp_cd
+                   AND d.site_cd = b.site_cd
+                   AND d.dept_cd = u.dept_cd
+                 WHERE b.tax_date BETWEEN %(date_from)s AND %(date_to)s
+            """
+
+            params = {'date_from': date_from_ymd, 'date_to': date_to_ymd}
+
+            # 수주구분 필터
+            suju_type = search_conditions['suju_type']
+            if suju_type == '일반':
+                sql += " AND LEFT(b.suju_no,1) = 'S' "
+            elif suju_type == 'MA':
+                sql += " AND LEFT(b.suju_no,1) = 'M' "
+
+            # 부서 필터
+            if search_conditions['dept_cd'] != '전체':
+                sql += " AND d.dept_cd = %(dept_cd)s AND d.dstb_type = 'A01' AND d.comp_cd = 'BANT' "
+                params['dept_cd'] = search_conditions['dept_cd']
+            else:
+                sql += " AND d.comp_cd = 'BANT' AND d.dstb_type = 'A01' "
+
+            sql += " ORDER BY b.tax_date ASC, b.suju_no, b.chg_chasu "
+
+            cursor.execute(sql, params)
+            results = cursor.fetchall()
+
+            if results:
+                totals = {
+                    '공급가': sum((row.get('공급가') or 0) for row in results),
+                    '부가세': sum((row.get('부가세') or 0) for row in results),
+                    '합계금액': sum((row.get('합계금액') or 0) for row in results),
+                }
+
+        else:
+            # 최초 진입 시 기본값
+            search_conditions = {'date_to': today, 'suju_type': '전체', 'dept_cd': '전체'}
+
+        return render_template(
+            'buy_list.html',
+            results=results,
+            totals=totals,
+            search_conditions=search_conditions,
+            dept_list=dept_list
+        )
+
+    except Exception as e:
+        print(f"[buy_list] Error: {e}")
+        return render_template('buy_list.html',
+                               error=f"시스템 오류: {str(e)}",
+                               search_conditions={'date_to': today},
+                               dept_list=dept_list)
+    finally:
+        try:
+            if cursor: cursor.close()
+        except: pass
+        try:
+            if connection and connection.is_connected():
+                connection.close()
+        except: pass
+
+
+
+############매입내역 조회 END ################################################
+
+
 
 # 애플리케이션 실행  (서버에서 실행시 0.0.0.0)
 if __name__ == '__main__':
